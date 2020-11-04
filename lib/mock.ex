@@ -33,7 +33,7 @@ defmodule Mock do
 
   ## Example
 
-      with_mock(HTTPotion, [get: fn("http://example.com") ->
+      with_mock HTTPotion, [get: fn("http://example.com") ->
            "<html></html>" end] do
          # Tests that make the expected call
          assert called HTTPotion.get("http://example.com")
@@ -50,10 +50,10 @@ defmodule Mock do
   Mock up multiple modules for the duration of `test`.
 
   ## Example
-  with_mocks([{HTTPotion, opts, [{get: fn("http://example.com") -> "<html></html>" end}]}]) do
-    # Tests that make the expected call
-    assert called HTTPotion.get("http://example.com")
-  end
+      with_mocks([{HTTPotion, opts, [get: fn("http://example.com") -> "<html></html>" end]}]) do
+        # Tests that make the expected call
+        assert called HTTPotion.get("http://example.com")
+      end
   """
   defmacro with_mocks(mocks, do: test) do
     quote do
@@ -120,6 +120,24 @@ defmodule Mock do
   end
 
   @doc """
+  Call original function inside mock anonymous function.
+  Allows overriding only a certain behavior of a function.
+  Compatible with passthrough option.
+
+  ## Example
+
+      with_mock String, [:passthrough], [reverse: fn(str) ->
+           passthrough([str]) <> "!" end] do
+         assert String.reverse("xyz") == "zyx!"
+      end
+  """
+  defmacro passthrough(args) do
+    quote do
+      :meck.passthrough(unquote(args))
+    end
+  end
+
+  @doc """
     Use inside a `with_mock` block to determine whether
     a mocked function was called as expected.
 
@@ -140,7 +158,7 @@ defmodule Mock do
 
   @doc """
     Use inside a `with_mock` block to determine whether
-    a mocked function was called as expected. If the assertion fails, 
+    a mocked function was called as expected. If the assertion fails,
     the calls that were received are displayed in the assertion message.
 
     Pass `:_` as a function argument for wildcard matches.
@@ -158,7 +176,7 @@ defmodule Mock do
       value = :meck.called(unquoted_module, unquote(f), unquote(args))
 
       unless value do
-        calls = unquoted_module 
+        calls = unquoted_module
                 |> :meck.history()
                 |> Enum.with_index()
                 |> Enum.map(fn {{_, {m, f, a}, ret}, i} ->
@@ -169,6 +187,84 @@ defmodule Mock do
         raise ExUnit.AssertionError,
           message: "Expected call but did not receive it. Calls which were received:\n\n#{calls}"
       end
+    end
+  end
+
+  @doc """
+    Use inside a `with_mock` block to determine whether a mocked function was called
+    as expected exactly x times. If the assertion fails, the number of calls that
+    were received is displayed in the assertion message.
+
+    Pass `:_` as a function argument for wildcard matches.
+
+    ## Example
+
+        assert_called_exactly HTTPotion.get("http://example.com"), 2
+
+        # Matches any invocation
+        assert_called_exactly HTTPotion.get(:_), 2
+  """
+  defmacro assert_called_exactly({{:., _, [module, f]}, _, args}, call_times) do
+    quote do
+      unquoted_module = unquote(module)
+      unquoted_f = unquote(f)
+      unquoted_args = unquote(args)
+      unquoted_call_times = unquote(call_times)
+      num_calls = :meck.num_calls(unquoted_module, unquoted_f, unquoted_args)
+
+      if num_calls != unquoted_call_times do
+        mfa_str = "#{unquoted_module}.#{unquoted_f}(#{unquoted_args |> Enum.map(&Kernel.inspect/1) |> Enum.join(", ")})"
+        raise ExUnit.AssertionError,
+          message: "Expected #{mfa_str} to be called exactly #{unquoted_call_times} time(s), but it was called (number of calls: #{num_calls})"
+      end
+    end
+  end
+
+  @doc """
+    Use inside a `with_mock` block to check if
+    a mocked function was NOT called. If the assertion fails,
+    the number of calls is displayed in the assertion message.
+
+    Pass `:_` as a function argument for wildcard matches.
+
+    ## Example
+
+        assert_not_called HTTPotion.get("http://example.com")
+
+        # Matches any invocation
+        assert_not_called HTTPotion.get(:_)
+    """
+  defmacro assert_not_called({{:., _, [module, f]}, _, args}) do
+    quote do
+      unquoted_module = unquote(module)
+      unquoted_f = unquote(f)
+      unquoted_args = unquote(args)
+      num_calls = :meck.num_calls(unquoted_module, unquoted_f, unquoted_args)
+
+      if num_calls > 0 do
+        mfa_str = "#{unquoted_module}.#{unquoted_f}(#{unquoted_args |> Enum.map(&Kernel.inspect/1) |> Enum.join(", ")})"
+        raise ExUnit.AssertionError,
+          message: "Expected #{mfa_str} not to be called, but it was called (number of calls: #{num_calls})"
+      end
+    end
+  end
+
+  @doc """
+  Helper function to get the hsitory of mock functions executed.
+
+  ## Example
+
+      iex> assert call_history(HTTPotion) == [
+          {pid, {HTTPotion, :get, ["http://example.com"]}, some_return_value}
+        ]
+
+  """
+  defmacro call_history(module) do
+    quote do
+      unquoted_module = unquote(module)
+
+      unquoted_module
+      |> :meck.history()
     end
   end
 
@@ -198,8 +294,9 @@ defmodule Mock do
       setup do
         mock_modules(unquote(mocks))
 
-        # The mocks are linked to the process that setup all the tests and are
-        # automatically unloaded when that process shuts down
+        on_exit(fn ->
+          :meck.unload()
+        end)
 
         unquote(setup_block)
       end
@@ -228,6 +325,11 @@ defmodule Mock do
     quote do
       setup unquote(context) do
         mock_modules(unquote(mocks))
+
+        on_exit(fn ->
+          :meck.unload()
+        end)
+
         unquote(setup_block)
       end
     end
@@ -251,7 +353,7 @@ defmodule Mock do
         end
 
         unquote(__MODULE__)._install_mock(m, mock_fns)
-        assert :meck.validate(m) == true
+        true = :meck.validate(m)
 
         [ m | ms] |> Enum.uniq
       end)

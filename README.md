@@ -1,5 +1,4 @@
 [![Build Status](https://travis-ci.org/jjh42/mock.svg?branch=master)](https://travis-ci.org/jjh42/mock)
-[![Coverage Status](https://coveralls.io/repos/github/jjh42/mock/badge.svg?branch=master)](https://coveralls.io/github/jjh42/mock?branch=master)
 
 # Mock
 A mocking library for the Elixir language.
@@ -9,6 +8,28 @@ module mocking functionality for Elixir. It uses macros in Elixir to expose the
 functionality in a convenient manner for integrating in Elixir tests.
 
 See the full [reference documentation](https://hexdocs.pm/mock/Mock.html).
+
+# Table of Contents
+* [Mock](#Mock)
+	* [Installation](#Installation)
+	* [*with_mock* - Mocking a single module](#with_mock---Mocking-a-single-module)
+	* [*with_mocks* - Mocking multiple modules](#with_mocks---Mocking-multiple-modules)
+	* [*test_with_mock* - with_mock helper](#test_with_mock---with_mock-helper)
+	* [*setup_with_mocks* - Configure all tests to have the same mocks](#setup_with_mocks---Configure-all-tests-to-have-the-same-mocks)
+	* [Mocking input dependant output](#Mocking-input-dependant-output)
+	* [Mocking functions with different arities](#Mocking-functions-with-different-arities)
+	* [*passthrough* - partial mocking of a module](#passthrough---partial-mocking-of-a-module)
+	* [Assert called - assert a specific function was called](#Assert-called---assert-a-specific-function-was-called)
+		* [Assert called - specific value](#Assert-called---specific-value)
+		* [Assert called - wildcard](#Assert-called---wildcard)
+		* [Assert called - pattern matching](#Assert-called---pattern-matching)
+		* [Assert call order](#Assert-call-order)
+	* [Assert not called - assert a specific function was not called](#Assert-not-called---assert-a-specific-function-was-not-called)
+	* [Assert called exactly - assert a specific function was called exactly x times](#Assert-called-exactly---assert-a-specific-function-was-called-exactly-x-times)
+	* [NOT SUPPORTED - Mocking internal function calls](#NOT-SUPPORTED---Mocking-internal-function-calls)
+	* [Tips](#Tips)
+	* [Help](#Help)
+	* [Suggestions](#Suggestions)
 
 ## Installation
 First, add mock to your `mix.exs` dependencies:
@@ -21,13 +42,13 @@ end
 
 and run `$ mix deps.get`.
 
-## Example
+## *with_mock* - Mocking a single module
 The Mock library provides the `with_mock` macro for running tests with
 mocks.
 
 For a simple example, if you wanted to test some code which calls
 `HTTPotion.get` to get a webpage but without actually fetching the
-webpage you could do something like this.
+webpage you could do something like this:
 
 ```` elixir
 defmodule MyTest do
@@ -37,19 +58,21 @@ defmodule MyTest do
 
   test "test_name" do
     with_mock HTTPotion, [get: fn(_url) -> "<html></html>" end] do
-      HTTPotion.get("http://example.com")
-      # Tests that make the expected call
-      assert_called HTTPotion.get("http://example.com")
+      assert "<html></html>" == HTTPotion.get("http://example.com")
     end
   end
 end
 ````
 
-And you can mock up multiple modules with `with_mocks`.
+The `with_mock` macro creates a mock module. The keyword list provides a set
+of mock implementation for functions we want to provide in the mock (in
+this case just `get`). Inside `with_mock` we exercise the test code
+and we can check that the call was made as we expected using `called` and
+providing the example of the call we expected.
 
-`opts` List of optional arguments passed to meck. `:passthrough` will
-passthrough arguments to the original module. Pass `[]` as `opts` if you don't
-need this.
+## *with_mocks* - Mocking multiple modules
+
+You can mock up multiple modules with `with_mocks`.
 
 ```` elixir
 defmodule MyTest do
@@ -75,52 +98,13 @@ defmodule MyTest do
 end
 ````
 
-You can mock functions that return different values depending on the input:
+The second parameter of each tuple is `opts` - a list of optional arguments
+passed to meck.
 
-```` elixir
-defmodule MyTest do
-  use ExUnit.Case, async: false
+## *test_with_mock* - with_mock helper
 
-  import Mock
-
-  test "mock functions with multiple returns" do
-    with_mocks(HTTPotion, [
-      get: fn
-        "http://example.com" -> "<html>Hello from example.com</html>"
-        "http://example.org" -> "<html>example.org says hi</html>"
-      end
-    ]) do
-      assert HTTPotion.get("http://example.com") == "<html>Hello from example.com</html>"
-      assert HTTPotion.get("http://example.org") == "<html>example.org says hi</html>"
-    end
-  end
-end
-````
-
-You can mock functions in the same module with different arity.
-The same way you could mock function with optional args.
-```` elixir
-defmodule MyTest do
-  use ExUnit.Case, async: false
-
-  import Mock
-
-  test "mock functions with different arity" do
-    with_mock String,
-      [slice: fn(string, range)      -> string end,
-       slice: fn(string, range, len) -> string end]
-    do
-      assert String.slice("test", 1..3) == "test"
-      assert String.slice("test", 1, 3) == "test"
-    end
-  end
-end
-
-````
-
-An additional convenience macro `test_with_mock` is supplied which
-internally delegates to `with_mock`. Allowing the above test to be
-written as follows:
+An additional convenience macro `test_with_mock` is supplied which internally
+delegates to `with_mock`. Allowing the above test to be written as follows:
 
 ```` elixir
 defmodule MyTest do
@@ -159,29 +143,10 @@ defmodule MyTest do
 end
 ````
 
-The `with_mock` creates a mock module. The keyword list provides a set
-of mock implementation for functions we want to provide in the mock (in
-this case just `get`). Inside `with_mock` we exercise the test code
-and we can check that the call was made as we expected using `called` and
-providing the example of the call we expected (the second argument `:_` has a
-special meaning of matching anything).
-
-You can also pass the option `:passthrough` to retain the original module
-functionality. For example
-```` elixir
-defmodule MyTest do
-  use ExUnit.Case, async: false
-  import Mock
-
-  test_with_mock "test_name", IO, [:passthrough], [] do
-    IO.puts "hello"
-    assert_called IO.puts "hello"
-  end
-end
-````
+## *setup_with_mocks* - Configure all tests to have the same mocks
 
 The `setup_with_mocks` mocks up multiple modules prior to every single test
-along with calling the provided setup block. It is simply an integration of the
+along while calling the provided setup block. It is simply an integration of the
 `with_mocks` macro available in this module along with the [`setup`](https://hexdocs.pm/ex_unit/ExUnit.Callbacks.html#setup/1)
 macro defined in elixir's `ExUnit`.
 
@@ -214,6 +179,349 @@ are not using `async: true` in any module where you are testing.
 Also, because of the way mock overrides the module, it must be defined in a
 separate file from the test file.
 
+## Mocking input dependant output
+
+If you have a function that should return different values depending on what the
+input is, you can do as follows:
+
+```` elixir
+defmodule MyTest do
+  use ExUnit.Case, async: false
+
+  import Mock
+
+  test "mock functions with multiple returns" do
+    with_mock(Map, [
+      get: fn
+        (%{}, "http://example.com") -> "<html>Hello from example.com</html>"
+        (%{}, "http://example.org") -> "<html>example.org says hi</html>"
+        (%{}, url) -> conditionally_mocked(url)
+      end
+    ]) do
+      assert Map.get(%{}, "http://example.com") == "<html>Hello from example.com</html>"
+      assert Map.get(%{}, "http://example.org") == "<html>example.org says hi</html>"
+      assert Map.get(%{}, "http://example.xyz") == "<html>Hello from example.xyz</html>"
+      assert Map.get(%{}, "http://example.tech") == "<html>example.tech says hi</html>"
+    end
+  end
+  
+  def conditionally_mocked(url) do
+    cond do
+      String.contains?(url, ".xyz") -> "<html>Hello from example.xyz</html>"
+      String.contains?(url, ".tech") -> "<html>example.tech says hi</html>"
+    end
+  end
+end
+````
+
+## Mocking functions with different arities
+
+You can mock functions in the same module with different arity:
+
+```` elixir
+defmodule MyTest do
+  use ExUnit.Case, async: false
+
+  import Mock
+
+  test "mock functions with different arity" do
+    with_mock String,
+      [slice: fn(string, range)      -> string end,
+       slice: fn(string, range, len) -> string end]
+    do
+      assert String.slice("test", 1..3) == "test"
+      assert String.slice("test", 1, 3) == "test"
+    end
+  end
+end
+
+````
+
+## *passthrough* - partial mocking of a module
+
+By default, only the functions being mocked can be accessed from within the test.
+Trying to call a non-mocked function from a mocked Module will result in an error.
+This can be circumvented by passing the `:passthrough` option like so:
+
+```` elixir
+defmodule MyTest do
+  use ExUnit.Case, async: false
+  import Mock
+
+  test_with_mock "test_name", IO, [:passthrough], [] do
+    IO.puts "hello"
+    assert_called IO.puts "hello"
+  end
+end
+````
+
+## Assert called - assert a specific function was called
+
+You can check whether or not your mocked module was called.
+
+### Assert called - specific value
+
+It is possible to assert that the mocked module was called with a specific input.
+
+```` elixir
+defmodule MyTest do
+  use ExUnit.Case, async: false
+
+  import Mock
+
+  test "test_name" do
+    with_mock HTTPotion, [get: fn(_url) -> "<html></html>" end] do
+      HTTPotion.get("http://example.com")
+      assert_called HTTPotion.get("http://example.com")
+    end
+  end
+end
+````
+
+### Assert called - wildcard
+
+It is also possible to assert that the mocked module was called with any value
+by passing the `:_` wildcard.
+
+```` elixir
+defmodule MyTest do
+  use ExUnit.Case, async: false
+
+  import Mock
+
+  test "test_name" do
+    with_mock HTTPotion, [get: fn(_url) -> "<html></html>" end] do
+      HTTPotion.get("http://example.com")
+      assert_called HTTPotion.get(:_)
+    end
+  end
+end
+````
+
+### Assert called - pattern matching
+
+`assert_called` will check argument equality using `==` semantics, not pattern matching.
+For structs, you must provide every property present on the argument as it was called or
+it will fail. To use pattern matching (useful when you only care about a few properties on
+the argument or need to perform advanced matching like regex matching), provide custom
+argument matcher(s) using [`:meck.is/1`](https://hexdocs.pm/meck/meck.html#is-1).
+
+```` elixir
+defmodule User do
+  defstruct [:id, :name, :email]
+end
+
+defmodule Network do
+  def update(%User{} = user), do: # ...
+end
+
+defmodule MyTest do
+  use ExUnit.Case, async: false
+
+  import Mock
+
+  test "test_name" do
+    with_mock Network, [update: fn(_user) -> :ok end] do
+      user = %User{id: 1, name: "Jane Doe", email: "jane.doe@gmail.com"}
+      Network.update(user)
+
+      assert_called Network.update(
+        :meck.is(fn user ->
+          assert user.__struct__ == User
+          assert user.id == 1
+
+          # matcher must return true when the match succeeds
+          true
+        end)
+      )
+    end
+  end
+end
+````
+
+## Assert not called - assert a specific function was not called
+
+`assert_not_called` will assert that a mocked function was not called.
+
+```elixir
+defmodule MyTest do
+  use ExUnit.Case, async: false
+
+  import Mock
+
+  test "test_name" do
+    with_mock HTTPotion, [get: fn(_url) -> "<html></html>" end] do
+      # Using Wildcard
+      assert_not_called HTTPotion.get(:_)
+
+      HTTPotion.get("http://example.com")
+
+      # Using Specific Value
+      assert_not_called HTTPotion.get("http://another-example.com")
+    end
+  end
+end
+```
+
+## Assert called exactly - assert a specific function was called exactly x times
+
+`assert_called_exactly` will assert that a mocked function was called exactly the expected number of times.
+
+```elixir
+defmodule MyTest do
+  use ExUnit.Case, async: false
+
+  import Mock
+
+  test "test_name" do
+    with_mock HTTPotion, [get: fn(_url) -> "<html></html>" end] do
+      HTTPotion.get("http://example.com")
+      HTTPotion.get("http://example.com")
+
+      # Using Wildcard
+      assert_called_exactly HTTPotion.get(:_), 2
+
+      # Using Specific Value
+      assert_called_exactly HTTPotion.get("http://example.com"), 2
+    end
+  end
+end
+```
+
+### Assert call order
+
+`call_history` will return the `meck.history(Module)` allowing you assert on the order of the function invocation:
+
+```elixir
+defmodule MyTest do
+  use ExUnit.Case, async: false
+
+  import Mock
+
+  test "test_name" do
+    with_mock HTTPotion, [get: fn(_url) -> "<html></html>" end] do
+      HTTPotion.get("http://example.com")
+
+      assert call_history(HTTPotion) ==
+        [
+          {pid, {HTTPotion, :get, ["http://example.com"]}, "<html></html>"}
+        ]
+    end
+  end
+end
+```
+
+
+You can use any valid Elixir pattern matching/multiple function heads to accomplish
+this more succinctly, but remember that the matcher will be executed for _all_ function
+calls, so be sure to include a fallback case that returns `false`. For mocked functions
+with multiple arguments, you must include a matcher/pattern for each argument.
+
+```` elixir
+defmodule Network.V2 do
+  def update(%User{} = user, changes), do: # ...
+
+  def update(id, changes) when is_integer(id), do: # ...
+
+  def update(_, _), do: # ...
+end
+
+defmodule MyTest do
+  use ExUnit.Case, async: false
+
+  import Mock
+
+  test "test_name" do
+    with_mock Network.V2, [update: fn(_user, _changes) -> :ok end] do
+      Network.V2.update(%User{id: 456, name: "Jane Doe"}, %{name: "John Doe"})
+      Network.V2.update(123, %{name: "John Doe", email: "john.doe@gmail.com"})
+      Network.V2.update(nil, %{})
+
+      # assert that `update` was called with user id 456
+      assert_called Network.V2.update(
+        :meck.is(fn
+          %User{id: 456} -> true
+          _ -> false
+        end),
+        :_
+      )
+
+      # assert that `update` was called with an email change
+      assert_called Network.V2.update(
+        :_,
+        :meck.is(fn
+          %{email: "john.doe@gmail.com"} -> true
+          _ -> false
+        end)
+      )
+    end
+  end
+end
+````
+
+## NOT SUPPORTED - Mocking internal function calls
+
+A common issue a lot of developers run into is Mock's lack of support for mocking
+internal functions. Mock will behave as follows:
+
+```` elixir
+defmodule MyApp.IndirectMod do
+
+  def value do
+    1
+  end
+
+  def indirect_value do
+    value()
+  end
+
+  def indirect_value_2 do
+    MyApp.IndirectMod.value()
+  end
+
+end
+````
+
+```` elixir
+defmodule MyTest do
+  use ExUnit.Case, async: false
+  import Mock
+
+  test "indirect mock" do
+    with_mocks([
+      { MyApp.IndirectMod, [:passthrough], [value: fn -> 2 end] },
+    ]) do
+      # The following assert succeeds
+      assert MyApp.IndirectMod.indirect_value_2() == 2
+      # The following assert also succeeds
+      assert MyApp.IndirectMod.indirect_value() == 1
+    end
+  end
+end
+````
+
+It is important to understand that only fully qualified function calls get mocked.
+The reason for this is because of the way Meck is structured. Meck creates a thin wrapper module with the name of the mocked module (and passes through any calls to the original
+Module in case passthrough is used). The original module is renamed, but otherwise unmodified. Once the call enters the original module, the local function call jumps stay in the module.
+
+Big thanks to @eproxus (author of Meck) who helped explain this to me. We're looking
+into some alternatives to help solve this, but it is something to be aware of in the meantime. The issue is being tracked in [Issue 71](https://github.com/jjh42/mock/issues/71).
+
+In order to workaround this issue, the `indirect_value` can be rewritten like so:
+```` elixir
+  def indirect_value do
+    __MODULE__.value()
+  end
+````
+
+Or, like so:
+
+```` elixir
+  def indirect_value do
+    MyApp.IndirectMod.value()
+  end
+````
+
 ## Tips
 The use of mocking can be somewhat controversial. I personally think that it
 works well for certain types of tests. Certainly, you should not overuse it. It
@@ -227,6 +535,16 @@ tests set `async: false` so that only one test runs at a time.
 
 ## Help
 Open an issue.
+
+## Publishing New Package Versions
+For library maintainers, the following is an example of how to publish new versions of the package. Run the following commands assuming you incremented the version in the `mix.exs` file from 0.3.4 to 0.3.5:
+
+```
+git commit -am "Increase version from 0.3.4 to 0.3.5"
+git tag -a v0.3.5 -m "Git tag 0.3.5"
+git push origin --tags
+mix hex.publish
+```
 
 ## Suggestions
 I'd welcome suggestions for improvements or bugfixes. Just open an issue.

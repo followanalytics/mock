@@ -1,7 +1,7 @@
 defmodule Mock.Mixfile do
   use Mix.Project
 
-  @version "0.3.3"
+  @version "0.3.6"
 
   def project do
     [ app: :mock,
